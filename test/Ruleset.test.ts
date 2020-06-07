@@ -1,4 +1,4 @@
-import { Ruleset } from '../src/Ruleset';
+import { Ruleset } from '../src';
 
 describe('Ruleset', () => {
     const mergeResult = Object.freeze([{ tag: 'ok' }]);

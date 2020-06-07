@@ -1,6 +1,7 @@
 
 export interface Phrase {
     readonly tag: string;
+    readonly rank?: number;
 }
 
 export type Merger<L extends Phrase = any, R extends Phrase = any> = (lhs: Phrase | L, rhs: Phrase | R) => readonly Phrase[];

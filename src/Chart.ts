@@ -1,8 +1,10 @@
 import { Phrase, Ruleset } from './Ruleset';
+import TinyQueue from 'tinyqueue';
 
 interface Item {
     readonly start: number;
     readonly end: number;
+    readonly rank: number; // a memo of (phrase.rank ?? 0)
     readonly phrase: Phrase;
 }
 
@@ -11,11 +13,13 @@ class Position {
     public asEnd: Item[] = [];
 }
 
+const compareItems = (a: Item, b: Item) => a.rank - b.rank;
+
 export class Chart {
     private readonly ruleset: Ruleset;
     private itemsWith: Position[] = [new Position()];
     private whole: Phrase[] = [];
-    private agenda: Item[] = [];
+    private agenda: TinyQueue<Item> = new TinyQueue<Item>([], compareItems);
 
     private addItem(item: Item) {
         this.itemsWith[item.start].asStart.push(item);
@@ -30,6 +34,7 @@ export class Chart {
             this.agenda.push({
                 start: lhs.start,
                 end: rhs.end,
+                rank: merger.rank ?? 0,
                 phrase: merger,
             });
         }
@@ -43,6 +48,7 @@ export class Chart {
         const item = {
             start: this.itemsWith.length - 1,
             end: this.itemsWith.length,
+            rank: phrase.rank ?? 0,
             phrase,
         };
         this.itemsWith.push(new Position());
@@ -51,10 +57,14 @@ export class Chart {
         return this;
     }
 
-    public parse(): Phrase[] {
-        let item: Item | undefined;
-        // eslint-disable-next-line no-cond-assign
-        while (item = this.agenda.pop()) {
+    public parse(maxRank = Infinity): Phrase[] {
+        for (;;) {
+            const item = this.agenda.peek();
+            if (!item || item.rank > maxRank) {
+                return this.whole;
+            } else {
+                this.agenda.pop();
+            }
             this.addItem(item);
             for (const lhs of this.itemsWith[item.start].asEnd) {
                 this.tryToMerge(lhs, item);
@@ -63,6 +73,5 @@ export class Chart {
                 this.tryToMerge(item, rhs);
             }
         }
-        return this.whole;
     }
 }

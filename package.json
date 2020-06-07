@@ -1,6 +1,6 @@
 {
   "name": "chapa",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A TypeScript chart parser",
   "main": "dist/index.js",
   "scripts": {
@@ -32,5 +32,8 @@
     "ts-jest": "^26.1.0",
     "ts-node": "^8.10.2",
     "typescript": "^3.9.5"
+  },
+  "dependencies": {
+    "tinyqueue": "^2.0.3"
   }
 }
