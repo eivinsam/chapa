@@ -1,2 +1,2 @@
-export * from './Ruleset';
+export * from './Phrase';
 export * from './Chart';

@@ -1,27 +1,26 @@
-import { Phrase, Ruleset } from './Ruleset';
+import { Phrase } from './Phrase';
 import TinyQueue from 'tinyqueue';
 
-interface Item<PT extends Phrase> {
+interface Item {
     readonly start: number;
     readonly end: number;
     readonly rank: number; // a memo of (phrase.rank ?? 0)
-    readonly phrase: PT;
+    readonly phrase: Phrase;
 }
 
-class Position<PT extends Phrase> {
-    public asStart: Item<PT>[] = [];
-    public asEnd: Item<PT>[] = [];
+class Position {
+    public asStart: Item[] = [];
+    public asEnd: Item[] = [];
 }
 
-const compareItems = (a: Item<any>, b: Item<any>) => a.rank - b.rank;
+const compareItems = (a: Item, b: Item) => a.rank - b.rank;
 
-export class Chart<PT extends Phrase> {
-    private readonly ruleset: Ruleset<PT>;
-    private itemsWith: Position<PT>[] = [new Position()];
-    private whole: PT[] = [];
-    private agenda: TinyQueue<Item<PT>> = new TinyQueue<Item<PT>>([], compareItems);
+export class Chart {
+    private itemsWith: Position[] = [new Position()];
+    private whole: Phrase[] = [];
+    private agenda: TinyQueue<Item> = new TinyQueue<Item>([], compareItems);
 
-    private addItem(item: Item<PT>) {
+    private addItem(item: Item) {
         this.itemsWith[item.start].asStart.push(item);
         this.itemsWith[item.end].asEnd.push(item);
         if (item.start === 0 && item.end === this.itemsWith.length - 1) {
@@ -29,22 +28,25 @@ export class Chart<PT extends Phrase> {
         }
     }
 
-    private tryToMerge(lhs: Item<PT>, rhs: Item<PT>) {
-        for (const merger of this.ruleset.merge(lhs.phrase, rhs.phrase)) {
-            this.agenda.push({
-                start: lhs.start,
-                end: rhs.end,
-                rank: merger.rank ?? 0,
-                phrase: merger,
-            });
+    private pushMerger(lhs: Item, rhs: Item, merger: Phrase) {
+        this.agenda.push({
+            start: lhs.start,
+            end: rhs.end,
+            rank: merger.rank ?? 0,
+            phrase: merger,
+        });
+    }
+
+    private tryToMerge(lhs: Item, rhs: Item) {
+        for (const merger of lhs.phrase.mergeRight(rhs.phrase)) {
+            this.pushMerger(lhs, rhs, merger);
+        }
+        for (const merger of rhs.phrase.mergeLeft(lhs.phrase)) {
+            this.pushMerger(lhs, rhs, merger);
         }
     }
 
-    public constructor(ruleset: Ruleset<PT>) {
-        this.ruleset = ruleset;
-    }
-
-    public add(phrase: PT): Chart<PT> {
+    public add(phrase: Phrase): Chart {
         const item = {
             start: this.itemsWith.length - 1,
             end: this.itemsWith.length,
@@ -57,7 +59,7 @@ export class Chart<PT extends Phrase> {
         return this;
     }
 
-    public parse(maxRank = Infinity): PT[] {
+    public parse(maxRank = Infinity): Phrase[] {
         for (;;) {
             const item = this.agenda.peek();
             if (!item || item.rank > maxRank) {

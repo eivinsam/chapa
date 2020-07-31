@@ -1,40 +1,126 @@
 import { Chart } from '../src';
-import { Phrase, Ruleset } from '../src';
+import { Phrase } from '../src';
 
 interface Token extends Phrase {
-    orth: string;
+    readonly orth: string;
 }
 
 interface ComplexPhrase extends Phrase {
-    head: Phrase;
-    mod: Phrase;
-    errors: readonly string[];
+    readonly head: Phrase;
+    readonly mod: Phrase;
+    readonly errors: readonly string[];
 }
 
 type RSA = string | Array<RSA>;
 
+class Hello extends Phrase {
+    mergeRight(rhs: Phrase): readonly Phrase[] {
+        if (rhs instanceof World) {
+            return [new Greeting('Hello, world!')];
+        } else {
+            return super.mergeRight(rhs);
+        }
+    }
+}
+class World extends Phrase {}
+class Greeting extends Phrase {
+    readonly text: string;
+    constructor(text: string) {
+        super();
+        this.text = text;
+    }
+}
+
+const errorIf = (condition: boolean, message: string) => condition ? [message] : [];
+const calculateRank = (head: Phrase, mod: Phrase, errors: readonly string[]) =>
+    (head.rank ?? 0) + (mod.rank ?? 0) + errors.length;
+class Determiner extends Phrase implements Token {
+    readonly orth: string;
+    constructor(orth: string) {
+        super();
+        this.orth = orth;
+    }
+}
+class Preposition extends Phrase implements Token {
+    readonly orth: string;
+    constructor(orth: string) {
+        super();
+        this.orth = orth;
+    }
+
+    mergeRight(rhs: Phrase): readonly Phrase[] {
+        if (rhs instanceof NounPhrase) {
+            return [new MarkedNoun(this, rhs, errorIf(!rhs.determined, 'Noun phrase is not complete'))];
+        }
+        return super.mergeRight(rhs);
+    }
+}
+class MarkedNoun extends Phrase implements ComplexPhrase {
+    readonly errors: readonly string[];
+    readonly head: Phrase;
+    readonly mod: Phrase;
+
+    constructor(head: Phrase, mod: Phrase, errors: readonly string[]) {
+        super(calculateRank(head, mod, errors));
+        this.errors = errors;
+        this.head = head;
+        this.mod = mod;
+    }
+}
+class NounPhrase extends Phrase {
+    readonly determined: boolean;
+    constructor(determined: boolean, rank = 0) {
+        super(rank);
+        this.determined = determined;
+    }
+
+    mergeLeft(lhs: Phrase): readonly Phrase[] {
+        if (lhs instanceof Determiner) {
+            return [new ComplexNoun(this, lhs, errorIf(this.determined, 'Noun already has determiner'))];
+        }
+        return super.mergeLeft(lhs);
+    }
+    mergeRight(rhs: Phrase): readonly Phrase[] {
+        if (rhs instanceof MarkedNoun) {
+            return [new ComplexNoun(this, rhs, errorIf(!this.determined, 'Noun phrase is not complete'))];
+        }
+        return super.mergeRight(rhs);
+    }
+}
+class Noun extends NounPhrase implements Token {
+    readonly orth: string;
+    constructor(orth: string) {
+        super(false);
+        this.orth = orth;
+    }
+}
+class ComplexNoun extends NounPhrase implements ComplexPhrase {
+    readonly head: NounPhrase;
+    readonly mod: Phrase;
+    readonly errors: string[];
+    constructor(head: NounPhrase, mod: Phrase, errors: string[]) {
+        super(head.determined || mod instanceof Determiner, calculateRank(head, mod, errors));
+        this.head = head;
+        this.mod = mod;
+        this.errors = errors;
+    }
+}
+
 describe('Chart', () => {
     describe('1-rule grammar', () => {
-        const ruleset = new Ruleset([
-            {
-                lhs: 'hello',
-                rhs: 'world',
-                merge: (lhs, rhs) => [{ tag: 'greeting', text: 'Hello, World!' }],
-            },
-        ]);
-        const helloToken = { tag: 'hello' };
-        const worldToken = { tag: 'world' };
+        const helloToken = new Hello();
+        const worldToken = new World();
 
         test('Hello world', () => {
-            const chart = new Chart(ruleset);
+            const chart = new Chart();
             chart.add(helloToken);
-            expect(chart.parse()).toEqual([expect.objectContaining({ tag: 'hello' })]);
+            expect(chart.parse()).toEqual([helloToken]);
             chart.add(worldToken);
-            expect(chart.parse()).toEqual([expect.objectContaining({ tag: 'greeting' })]);
+            expect(chart.parse()).toEqual([expect.objectContaining({ text: 'Hello, world!' })]);
         });
 
         test('World hello', () => {
-            expect(new Chart(ruleset).add(worldToken).add(helloToken).parse())
+            expect(new Chart().add(worldToken).add(helloToken).parse())
                 .toEqual([]);
         });
     });
@@ -55,68 +141,24 @@ describe('Chart', () => {
                 return '[??]';
             }
         };
-        const hasMod = (tag: string, phrase: Phrase | ComplexPhrase) => {
-            while ('mod' in phrase) {
-                if (phrase.mod.tag === tag) {
-                    return true;
-                } else {
-                    phrase = phrase.head;
-                }
-            }
-            return false;
-        };
         const noun = 'N';
-        const prep = 'P';
-        const det = 'D';
-        const _a = { tag: det, orth: 'a' };
-        const _car = { tag: noun, orth: 'car' };
-        const _dog = { tag: noun, orth: 'dog' };
-        const _house = { tag: noun, orth: 'house' };
-        const _hill = { tag: noun, orth: 'hill' };
-        const _in = { tag: prep, orth: 'in' };
-        const _on = { tag: prep, orth: 'on' };
-
-        const merge = (head: Phrase, mod: Phrase, errors: readonly string[]) =>
-            ({ tag: head.tag, rank: (head.rank ?? 0) + (mod.rank ?? 0) + errors.length, head, mod, errors });
-
-        const errorIf = (condition: boolean, message: string) => condition ? [message] : [];
-
-        const babyEnglish = new Ruleset([
-            {
-                lhs: det,
-                rhs: noun,
-                merge: (DP: Phrase | ComplexPhrase, NP: Phrase | ComplexPhrase) =>
-                    [merge(NP, DP, errorIf(hasMod(det, NP), 'Noun phrase already has determiner'))],
-            },
-            {
-                lhs: prep,
-                rhs: noun,
-                merge: (PP: Phrase | ComplexPhrase, NP: Phrase | ComplexPhrase) =>
-                    [merge(PP, NP, [
-                        ...errorIf(!hasMod(det, NP), 'Noun phrase is not complete'),
-                        ...errorIf(hasMod(noun, PP), 'Preposition already has a noun phrase'),
-                    ])],
-            },
-            {
-                lhs: noun,
-                rhs: prep,
-                merge: (NP: Phrase | ComplexPhrase, PP: Phrase | ComplexPhrase) =>
-                    [merge(NP, PP, [
-                        ...errorIf(!hasMod(det, NP), 'Noun phrase is not complete'),
-                        ...errorIf(!hasMod(noun, PP), 'Preposition phrase is not complete'),
-                    ])],
-            },
-        ]);
+        const _a = new Determiner('a');
+        const _car = new Noun('car');
+        const _dog = new Noun('dog');
+        const _house = new Noun('house');
+        const _hill = new Noun('hill');
+        const _in = new Preposition('in');
+        const _on = new Preposition('on');
 
         const parse = (maxRank: number, ...tokens: Token[]) =>
             tokens.reduce(
                 (chart, tok) => chart.add(tok),
-                new Chart(babyEnglish),
+                new Chart(),
             ).parse(maxRank);
 
         test('a car: 1', () => {
             const result = parse(Infinity, _a, _car);
-            expect(result).toEqual([{ tag: 'N', rank: 0, head: _car, mod: _a, errors: [] }]);
+            expect(result).toEqual([new ComplexNoun(_car, _a, [])]);
             expect(result.map(print)).toEqual([__a_car]);
         });
 
@@ -126,20 +168,7 @@ describe('Chart', () => {
 
         test('a a car: 1 error', () => {
             expect(parse(Infinity, _a, _a, _car)).toEqual([
-                {
-                    tag: noun,
-                    rank: 1,
-                    errors: ['Noun phrase already has determiner'],
-                    mod: _a,
-                    head: {
-                        tag: noun,
-                        rank: 0,
-                        errors: [],
-                        mod: _a,
-                        head: _car,
-                    },
-                },
-            ]);
+                new ComplexNoun(new ComplexNoun(_car, _a, []), _a, ['Noun already has determiner'])]);
         });
 
         test('a dog in a house: 1', () => {
